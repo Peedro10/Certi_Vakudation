@@ -13,6 +13,35 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
+            <id>bouncycastle</id>
+            <name>Bouncy Castle Repository</name>
+            <url>https://www.bouncycastle.org/repo/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Bouncy Castle Provider -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.77</version>
+        </dependency>
+
+        <!-- Bouncy Castle PKIX (pour ASN1, PEM, ECDSA, etc.) -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>1.77</version>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>
@@ -20,8 +49,15 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>1.6.0</version>
                 <configuration>
-                    <mainClass>isen.crypto.CertificateValidator</mainClass>
+                    <!-- Changez ici pour pointer vers la classe qui contient réellement votre méthode main -->
+
                     <mainClass>isen.crypto.CertificateChainValidator</mainClass>
+                    <mainClass>isen.crypto.CertificateValidator</mainClass>
+                    <mainClass>isen.crypto.CryptoUtils</mainClass>
+
+
+
+
                 </configuration>
             </plugin>
         </plugins>

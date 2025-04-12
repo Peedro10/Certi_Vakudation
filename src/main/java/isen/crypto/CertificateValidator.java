@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.security.PublicKey;
+import java.security.Signature;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
@@ -41,19 +42,49 @@ public class CertificateValidator {
 
             // Vérification KeyUsage
             boolean[] keyUsage = certificate.getKeyUsage();
+            // Pour vérifier KeyUsage correctement
             if (keyUsage != null) {
                 System.out.println("\nKeyUsage:");
-                String[] usages = {
-                        "digitalSignature", "nonRepudiation", "keyEncipherment", "dataEncipherment",
-                        "keyAgreement", "keyCertSign", "cRLSign", "encipherOnly", "decipherOnly"
-                };
-                for (int i = 0; i < keyUsage.length; i++) {
-                    if (keyUsage[i]) {
-                        System.out.println("  [OK] " + usages[i]);
-                    }
+                // Pour un certificat CA, keyCertSign devrait être true
+                if (keyUsage.length > 5 && keyUsage[5]) {
+                    System.out.println("  [OK] Certificate can sign other certificates (keyCertSign)");
+                } else {
+                    System.out.println("  [X] Certificate cannot sign other certificates");
                 }
+                // Autres usages...
             } else {
-                System.out.println("[X] KeyUsage extension not found.");
+                System.out.println("[X] KeyUsage extension not found - invalid for a CA certificate.");
+            }
+
+            // Pour vérifier BasicConstraints
+            try {
+                byte[] extValue = certificate.getExtensionValue("2.5.29.19"); // OID de BasicConstraints
+                if (extValue != null) {
+                    // Parse l'extension pour vérifier si c'est une CA
+                    // Utiliser ASN1InputStream de BouncyCastle pour extraire isCA
+                    System.out.println("[OK] BasicConstraints extension found");
+                } else {
+                    System.out.println("[X] BasicConstraints extension not found - invalid for a CA certificate");
+                }
+            } catch (Exception e) {
+                System.out.println("[X] Error checking BasicConstraints: " + e.getMessage());
+            }
+
+            // Pour la vérification manuelle avec Signature API
+            String sigAlgName = certificate.getSigAlgName();
+            System.out.println("\nSignature algorithm: " + sigAlgName);
+            try {
+                Signature sig = Signature.getInstance(sigAlgName);
+                sig.initVerify(certificate.getPublicKey());
+                sig.update(certificate.getTBSCertificate());
+                boolean valid = sig.verify(certificate.getSignature());
+                if (valid) {
+                    System.out.println("[OK] Signature manually verified with java.security.Signature API");
+                } else {
+                    System.out.println("[X] Manual signature verification failed");
+                }
+            } catch (Exception e) {
+                System.out.println("[X] Error in manual signature verification: " + e.getMessage());
             }
 
             // Vérification de la période de validité
