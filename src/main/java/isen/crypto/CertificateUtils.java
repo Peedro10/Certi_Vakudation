@@ -1,117 +1,156 @@
 package isen.crypto;
 
-import java.io.File;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+
+import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
-import java.io.InputStream;
-import java.net.URI;
-import java.nio.file.Files;
+import java.io.FileReader;
+import java.security.Principal;
+import java.security.Security;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
+import java.text.SimpleDateFormat;
 import java.util.Base64;
-import java.util.List;
-
-import org.bouncycastle.asn1.ASN1InputStream;
-import org.bouncycastle.asn1.ASN1OctetString;
-import org.bouncycastle.asn1.ASN1Sequence;
-import org.bouncycastle.asn1.x509.AccessDescription;
-import org.bouncycastle.asn1.x509.DistributionPoint;
-import org.bouncycastle.asn1.x509.DistributionPointName;
-import org.bouncycastle.asn1.x509.GeneralName;
-import org.bouncycastle.asn1.x509.GeneralNames;
-import org.bouncycastle.asn1.x509.X509Extension;
+import java.util.Date;
 
 /**
- * Classe utilitaire pour l'extraction d'informations des certificats X.509.
+ * Classe utilitaire pour la gestion des certificats X.509
+ * Cette classe contient des méthodes pour charger et afficher les informations des certificats
  */
 public class CertificateUtils {
 
-    /**
-     * Charge un certificat X.509 à partir d'un fichier au format DER ou PEM.
-     */
-    public static X509Certificate loadCertificate(String format, String path) throws Exception {
-        CertificateFactory factory = CertificateFactory.getInstance("X.509");
-        InputStream in;
+    static {
+        // Ajout du provider BouncyCastle pour le support des opérations cryptographiques avancées
+        Security.addProvider(new BouncyCastleProvider());
+    }
 
+    /**
+     * Charge un certificat X.509 à partir d'un fichier au format DER ou PEM
+     * 
+     * @param filePath Chemin du fichier contenant le certificat
+     * @param format Format du certificat ("DER" ou "PEM")
+     * @return L'objet X509Certificate représentant le certificat
+     * @throws Exception Si une erreur survient lors du chargement du certificat
+     */
+    public static X509Certificate loadCertificate(String filePath, String format) throws Exception {
         if (format.equalsIgnoreCase("DER")) {
-            in = new FileInputStream(path);
-            X509Certificate cert = (X509Certificate) factory.generateCertificate(in);
-            in.close();
-            return cert;
+            return loadCertificateDER(filePath);
         } else if (format.equalsIgnoreCase("PEM")) {
-            String content = Files.readString(new File(path).toPath());
-            content = content.replaceAll("-----BEGIN CERTIFICATE-----", "")
-                    .replaceAll("-----END CERTIFICATE-----", "")
-                    .replaceAll("\\s", "");
-            byte[] decoded = Base64.getDecoder().decode(content);
-            in = new java.io.ByteArrayInputStream(decoded);
-            X509Certificate cert = (X509Certificate) factory.generateCertificate(in);
-            in.close();
-            return cert;
+            return loadCertificatePEM(filePath);
         } else {
-            throw new IllegalArgumentException("Unsupported format: " + format);
+            throw new IllegalArgumentException("Format non supporté: " + format + ". Utilisez DER ou PEM.");
         }
     }
 
     /**
-     * Extrait les URLs de distribution CRL (Certificate Revocation List) du certificat.
+     * Charge un certificat X.509 au format DER à partir d'un fichier
+     * 
+     * @param filePath Chemin du fichier au format DER
+     * @return L'objet X509Certificate représentant le certificat
+     * @throws Exception Si une erreur survient lors du chargement du certificat
      */
-    public static List<String> getCRLDistributionPoints(X509Certificate cert) throws Exception {
-        byte[] crlExtension = cert.getExtensionValue(X509Extension.cRLDistributionPoints.getId());
-        if (crlExtension == null) return List.of();
-
-        List<String> crlUrls = new ArrayList<>();
-
-        try (ASN1InputStream in = new ASN1InputStream(crlExtension)) {
-            ASN1OctetString octetString = (ASN1OctetString) in.readObject();
-            try (ASN1InputStream seqIn = new ASN1InputStream(octetString.getOctets())) {
-                ASN1Sequence dpSeq = (ASN1Sequence) seqIn.readObject();
-
-                for (int i = 0; i < dpSeq.size(); i++) {
-                    DistributionPoint dp = DistributionPoint.getInstance(dpSeq.getObjectAt(i));
-                    DistributionPointName dpName = dp.getDistributionPoint();
-
-                    if (dpName != null && dpName.getType() == DistributionPointName.FULL_NAME) {
-                        GeneralNames gns = GeneralNames.getInstance(dpName.getName());
-                        for (GeneralName gn : gns.getNames()) {
-                            if (gn.getTagNo() == GeneralName.uniformResourceIdentifier) {
-                                String url = gn.getName().toString();
-                                crlUrls.add(url);
-                            }
-                        }
-                    }
-                }
-            }
+    private static X509Certificate loadCertificateDER(String filePath) throws Exception {
+        try (FileInputStream fis = new FileInputStream(filePath)) {
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            return (X509Certificate) cf.generateCertificate(fis);
         }
-
-        return crlUrls;
     }
 
     /**
-     * Extrait l'URL OCSP à partir de l'extension AuthorityInfoAccess du certificat.
+     * Charge un certificat X.509 au format PEM à partir d'un fichier
+     * Méthode simplifiée utilisant la lecture directe du fichier PEM
+     * 
+     * @param filePath Chemin du fichier au format PEM
+     * @return L'objet X509Certificate représentant le certificat
+     * @throws Exception Si une erreur survient lors du chargement du certificat
      */
-    public static URI getOCSPUrl(X509Certificate cert) throws Exception {
-        byte[] aiaExtension = cert.getExtensionValue("1.3.6.1.5.5.7.1.1"); // OID de AuthorityInfoAccess
-        if (aiaExtension == null) return null;
-
-        try (ASN1InputStream in = new ASN1InputStream(aiaExtension)) {
-            ASN1OctetString octets = (ASN1OctetString) in.readObject();
-            try (ASN1InputStream seqIn = new ASN1InputStream(octets.getOctets())) {
-                ASN1Sequence seq = (ASN1Sequence) seqIn.readObject();
-
-                for (int i = 0; i < seq.size(); i++) {
-                    AccessDescription desc = AccessDescription.getInstance(seq.getObjectAt(i));
-
-                    if (desc.getAccessMethod().equals(AccessDescription.id_ad_ocsp)) {
-                        GeneralName gn = desc.getAccessLocation();
-                        if (gn.getTagNo() == GeneralName.uniformResourceIdentifier) {
-                            return new URI(gn.getName().toString());
-                        }
-                    }
-                }
-            }
+    private static X509Certificate loadCertificatePEM(String filePath) throws Exception {
+        // Lire tout le contenu du fichier
+        byte[] content;
+        try (FileInputStream fis = new FileInputStream(filePath)) {
+            content = fis.readAllBytes();
         }
+        
+        // Convertir le contenu en chaîne
+        String strContent = new String(content);
+        
+        // Supprimer les en-têtes et pieds de page du PEM
+        String cleanContent = strContent
+                .replace("-----BEGIN CERTIFICATE-----", "")
+                .replace("-----END CERTIFICATE-----", "")
+                .replaceAll("\\s", "");
+        
+        // Décoder en base64
+        byte[] derBytes = Base64.getDecoder().decode(cleanContent);
+        
+        // Créer le certificat
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        return (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(derBytes));
+    }
 
-        return null;
+    /**
+     * Affiche les informations principales d'un certificat
+     * 
+     * @param cert Le certificat à analyser
+     * @param filename Le nom du fichier (pour l'affichage)
+     */
+    public static void displayCertificateInfo(X509Certificate cert, String filename) {
+        System.out.println("Certificate Information for " + filename + " :");
+        
+        // Informations de l'émetteur
+        Principal issuer = cert.getIssuerDN();
+        System.out.println("    Issuer: " + issuer.getName());
+        
+        // Informations du sujet
+        Principal subject = cert.getSubjectDN();
+        System.out.println("    Subject: " + subject.getName());
+        
+        // Période de validité
+        Date notBefore = cert.getNotBefore();
+        Date notAfter = cert.getNotAfter();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy");
+        System.out.println("    Validity : " + dateFormat.format(notBefore) + " - " + dateFormat.format(notAfter));
+        
+        // Algorithme de signature
+        String sigAlgName = cert.getSigAlgName();
+        System.out.println("    Signature Algorithm: " + sigAlgName);
+        
+        // Numéro de série
+        System.out.println("    Serial Number: " + cert.getSerialNumber());
+        
+        // Version
+        System.out.println("    Version: " + cert.getVersion());
+
+        System.out.println();
+    }
+    
+    /**
+     * Extrait le nom du fichier à partir d'un chemin complet
+     * 
+     * @param filePath Le chemin complet du fichier
+     * @return Le nom du fichier sans le chemin
+     */
+    public static String extractFileName(String filePath) {
+        int lastSeparatorIndex = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        if (lastSeparatorIndex == -1) {
+            return filePath;
+        }
+        return filePath.substring(lastSeparatorIndex + 1);
+    }
+    
+    /**
+     * Vérifie simplement si un certificat est valide à la date actuelle
+     * 
+     * @param cert Le certificat à vérifier
+     * @return true si le certificat est valide, false sinon
+     */
+    public static boolean isValidCertificate(X509Certificate cert) {
+        try {
+            Date now = new Date();
+            cert.checkValidity(now);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
